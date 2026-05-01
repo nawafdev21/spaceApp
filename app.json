@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "0a11a2a8-1ba8-429c-b270-22e62d369cee"
+      }
+    },
+    "owner": "awaf.dev21",
+    "slug": "spaceapp"
+  }
+}
