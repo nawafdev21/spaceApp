@@ -4,6 +4,8 @@ import {
   StyleSheet, StatusBar, SafeAreaView, Alert,
 } from 'react-native';
 import { colors, spacing, radius, typography } from '../theme';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 
 const TIMES = [
   { label: '8:00 ص', available: false },
@@ -38,6 +40,7 @@ const SEAT_TYPES = [
 
 export default function BookingScreen({ route, navigation }) {
   const { cafe } = route.params;
+  const { user } = useAuth();
   const [selTime, setSelTime] = useState(null);
   const [selDur, setSelDur] = useState(null);
   const [selSeat, setSelSeat] = useState(null);
@@ -47,10 +50,20 @@ export default function BookingScreen({ route, navigation }) {
 
   function handleConfirm() {
     setConfirmed(true);
+    supabase.from('bookings').insert({
+      user_id: user.id,
+      cafe_name: cafe.name,
+      time_slot: selTime.label,
+      duration: selDur.value,
+      seat_type: selSeat.label,
+      status: 'confirmed',
+    }).then(({ error }) => {
+      if (error) console.warn('booking error:', error.message);
+    });
     setTimeout(() => {
       Alert.alert(
         'تم الحجز! ✓',
-        `سيصلك إشعار قبل ${selTime.label} بـ 15 دقيقة`,
+        `سيصلك إشعار قبل موعدك ${selTime.label} بـ 15 دقيقة`,
         [{ text: 'ممتاز', onPress: () => navigation.goBack() }]
       );
     }, 600);

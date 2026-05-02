@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, StatusBar, TextInput, SafeAreaView,
+  StyleSheet, StatusBar, TextInput, SafeAreaView, Alert,
 } from 'react-native';
 import { colors, spacing, radius, typography } from '../theme';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 
 const CAFES = [
   {
@@ -147,8 +149,26 @@ function CafeCard({ cafe, onPress }) {
 export default function HomeScreen({ navigation }) {
   const [activeFilter, setActiveFilter] = useState('الكل');
   const [search, setSearch] = useState('');
+  const [cafes, setCafes] = useState(CAFES);
+  const { user, signOut } = useAuth();
 
-  const filtered = CAFES.filter(c => {
+  useEffect(() => {
+    async function fetchCafes() {
+      const { data, error } = await supabase.from('cafes').select('*');
+      if (!error && data?.length) {
+        setCafes(data.map(c => ({
+          ...c,
+          freeSeats: c.free_seats,
+          privateSeats: c.private_seats,
+          openTime: c.open_time,
+          totalSeats: c.total_seats,
+        })));
+      }
+    }
+    fetchCafes();
+  }, []);
+
+  const filtered = cafes.filter(c => {
     if (search && !c.name.includes(search) && !c.area.includes(search)) return false;
     if (activeFilter === 'متاح الآن') return c.freeSeats > 0;
     if (activeFilter === 'غرف خاصة') return c.privateSeats > 0;
@@ -168,7 +188,9 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.subtitle}>ابحث عن مكانك قبل ما تطلع</Text>
         </View>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>م</Text>
+          <Text style={styles.avatarText}>
+            {(user?.user_metadata?.full_name?.[0] ?? user?.email?.[0] ?? 'م').toUpperCase()}
+          </Text>
         </View>
       </View>
 
@@ -176,21 +198,21 @@ export default function HomeScreen({ navigation }) {
       <View style={styles.statsStrip}>
         <View style={styles.statItem}>
           <Text style={styles.statNum}>
-            {CAFES.filter(c => c.freeSeats > 0).length}
+            {cafes.filter(c => c.freeSeats > 0).length}
           </Text>
           <Text style={styles.statLabel}>متاح الآن</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
           <Text style={styles.statNum}>
-            {CAFES.reduce((a, c) => a + c.freeSeats, 0)}
+            {cafes.reduce((a, c) => a + c.freeSeats, 0)}
           </Text>
           <Text style={styles.statLabel}>مقعد فارغ</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
           <Text style={styles.statNum}>
-            {CAFES.filter(c => c.privateSeats > 0).length}
+            {cafes.filter(c => c.privateSeats > 0).length}
           </Text>
           <Text style={styles.statLabel}>غرف خاصة</Text>
         </View>
@@ -258,12 +280,22 @@ export default function HomeScreen({ navigation }) {
       {/* Bottom nav */}
       <View style={styles.bottomNav}>
         {[
-          { icon: '⊞', label: 'الرئيسية', active: true },
-          { icon: '◎', label: 'اكتشف', active: false },
-          { icon: '◫', label: 'حجوزاتي', active: false },
-          { icon: '◯', label: 'حسابي', active: false },
+          { icon: '⊞', label: 'الرئيسية', active: true, onPress: () => {} },
+          { icon: '◎', label: 'اكتشف', active: false, onPress: () => {} },
+          { icon: '◫', label: 'حجوزاتي', active: false, onPress: () => navigation.navigate('BookingsList') },
+          {
+            icon: '◯', label: 'حسابي', active: false,
+            onPress: () => Alert.alert(
+              'حسابي',
+              user?.user_metadata?.full_name ?? user?.email ?? '',
+              [
+                { text: 'تسجيل الخروج', style: 'destructive', onPress: signOut },
+                { text: 'إلغاء', style: 'cancel' },
+              ]
+            ),
+          },
         ].map(n => (
-          <TouchableOpacity key={n.label} style={styles.navItem}>
+          <TouchableOpacity key={n.label} style={styles.navItem} onPress={n.onPress}>
             <Text style={[styles.navIcon, n.active && { color: colors.primary }]}>{n.icon}</Text>
             <Text style={[styles.navLabel, n.active && { color: colors.primary }]}>{n.label}</Text>
           </TouchableOpacity>
