@@ -150,7 +150,7 @@ export default function HomeScreen({ navigation }) {
   const [activeFilter, setActiveFilter] = useState('الكل');
   const [search, setSearch] = useState('');
   const [cafes, setCafes] = useState(CAFES);
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
 
   useEffect(() => {
     async function fetchCafes() {
@@ -218,49 +218,47 @@ export default function HomeScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Search */}
-      <View style={styles.searchWrap}>
-        <Text style={styles.searchIcon}>⌕</Text>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="ابحث عن كافيه أو حي..."
-          placeholderTextColor={colors.textMuted}
-          value={search}
-          onChangeText={setSearch}
-        />
+      <View style={styles.controls}>
+        <View style={styles.searchWrap}>
+          <Text style={styles.searchIcon}>⌕</Text>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="ابحث عن كافيه أو حي..."
+            placeholderTextColor={colors.textMuted}
+            value={search}
+            onChangeText={setSearch}
+          />
+        </View>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll} contentContainerStyle={{ paddingHorizontal: spacing.lg }}>
+          {FILTERS.map(f => (
+            <TouchableOpacity
+              key={f}
+              style={[styles.filterPill, activeFilter === f && styles.filterPillActive]}
+              onPress={() => setActiveFilter(f)}
+            >
+              <Text style={[styles.filterText, activeFilter === f && styles.filterTextActive]}>{f}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        <View style={styles.legend}>
+          <View style={styles.legItem}>
+            <View style={[styles.legDot, { backgroundColor: colors.seatFree, borderColor: colors.available }]} />
+            <Text style={styles.legText}>فارغ</Text>
+          </View>
+          <View style={styles.legItem}>
+            <View style={[styles.legDot, { backgroundColor: colors.seatTaken }]} />
+            <Text style={styles.legText}>محجوز</Text>
+          </View>
+          <View style={styles.legItem}>
+            <View style={[styles.legDot, { backgroundColor: colors.seatPrivate, borderColor: 'rgba(100,120,255,0.5)' }]} />
+            <Text style={styles.legText}>خاص</Text>
+          </View>
+        </View>
       </View>
 
-      {/* Filters */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll} contentContainerStyle={{ paddingHorizontal: spacing.lg }}>
-        {FILTERS.map(f => (
-          <TouchableOpacity
-            key={f}
-            style={[styles.filterPill, activeFilter === f && styles.filterPillActive]}
-            onPress={() => setActiveFilter(f)}
-          >
-            <Text style={[styles.filterText, activeFilter === f && styles.filterTextActive]}>{f}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      {/* Legend */}
-      <View style={styles.legend}>
-        <View style={styles.legItem}>
-          <View style={[styles.legDot, { backgroundColor: colors.seatFree, borderColor: colors.available }]} />
-          <Text style={styles.legText}>فارغ</Text>
-        </View>
-        <View style={styles.legItem}>
-          <View style={[styles.legDot, { backgroundColor: colors.seatTaken }]} />
-          <Text style={styles.legText}>محجوز</Text>
-        </View>
-        <View style={styles.legItem}>
-          <View style={[styles.legDot, { backgroundColor: colors.seatPrivate, borderColor: 'rgba(100,120,255,0.5)' }]} />
-          <Text style={styles.legText}>خاص</Text>
-        </View>
-      </View>
-
-      {/* Cafe list */}
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}>
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}>
         {filtered.length === 0 ? (
           <View style={styles.empty}>
             <Text style={styles.emptyIcon}>◉</Text>
@@ -283,17 +281,7 @@ export default function HomeScreen({ navigation }) {
           { icon: '⊞', label: 'الرئيسية', active: true, onPress: () => {} },
           { icon: '◎', label: 'اكتشف', active: false, onPress: () => {} },
           { icon: '◫', label: 'حجوزاتي', active: false, onPress: () => navigation.navigate('BookingsList') },
-          {
-            icon: '◯', label: 'حسابي', active: false,
-            onPress: () => Alert.alert(
-              'حسابي',
-              user?.user_metadata?.full_name ?? user?.email ?? '',
-              [
-                { text: 'تسجيل الخروج', style: 'destructive', onPress: signOut },
-                { text: 'إلغاء', style: 'cancel' },
-              ]
-            ),
-          },
+          { icon: '◯', label: 'حسابي', active: false, onPress: () => navigation.navigate('Profile') },
         ].map(n => (
           <TouchableOpacity key={n.label} style={styles.navItem} onPress={n.onPress}>
             <Text style={[styles.navIcon, n.active && { color: colors.primary }]}>{n.icon}</Text>
@@ -323,13 +311,19 @@ const styles = StyleSheet.create({
   searchIcon: { fontSize: 18, color: colors.textMuted, marginRight: spacing.sm },
   searchInput: { flex: 1, height: 44, color: colors.textPrimary, fontSize: 14 },
 
-  filtersScroll: { marginBottom: spacing.sm },
-  filterPill: { paddingVertical: 7, paddingHorizontal: 14, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border, marginRight: spacing.sm, backgroundColor: colors.surface },
+  filtersScroll: { marginBottom: spacing.md, height: 34 },
+  filterPill: {
+    height: 34, paddingHorizontal: 16,
+    borderRadius: radius.full, borderWidth: 1, borderColor: colors.border,
+    marginRight: spacing.sm, backgroundColor: colors.surface,
+    alignItems: 'center', justifyContent: 'center',
+  },
   filterPillActive: { backgroundColor: colors.primaryGlow, borderColor: colors.primary },
-  filterText: { fontSize: 12, color: colors.textSecondary },
-  filterTextActive: { color: colors.primary, fontWeight: '600' },
+  filterText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
+  filterTextActive: { color: colors.primary },
 
-  legend: { flexDirection: 'row', paddingHorizontal: spacing.lg, marginBottom: spacing.sm, gap: 16 },
+  controls: {},
+  legend: { flexDirection: 'row', paddingHorizontal: spacing.lg, marginBottom: spacing.md, gap: 16 },
   legItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   legDot: { width: 10, height: 10, borderRadius: 3, borderWidth: 1 },
   legText: { fontSize: 11, color: colors.textMuted },

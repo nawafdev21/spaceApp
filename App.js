@@ -8,6 +8,7 @@ import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import BookingScreen from './src/screens/BookingScreen';
 import BookingsListScreen from './src/screens/BookingsListScreen';
+import ProfileScreen from './src/screens/ProfileScreen';
 import { colors } from './src/theme';
 
 const Stack = createNativeStackNavigator();
@@ -23,16 +24,19 @@ function AppNavigator() {
     );
   }
 
-  if (!user) {
-    return <LoginScreen />;
-  }
-
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="Home" component={HomeScreen} />
-        <Stack.Screen name="Booking" component={BookingScreen} />
-        <Stack.Screen name="BookingsList" component={BookingsListScreen} />
+        {user ? (
+          <>
+            <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen name="Booking" component={BookingScreen} />
+            <Stack.Screen name="BookingsList" component={BookingsListScreen} />
+            <Stack.Screen name="Profile" component={ProfileScreen} />
+          </>
+        ) : (
+          <Stack.Screen name="Login" component={LoginScreen} />
+        )}
       </Stack.Navigator>
     </NavigationContainer>
   );

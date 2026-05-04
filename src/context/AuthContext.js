@@ -35,8 +35,9 @@ export function AuthProvider({ children }) {
   }
 
   async function signOut() {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    setUser(null);
+    // scope:'local' clears AsyncStorage session without a server call
+    await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
   }
 
   return (
