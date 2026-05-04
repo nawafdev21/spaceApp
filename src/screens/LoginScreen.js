@@ -8,8 +8,14 @@ import {
 import { colors, spacing, radius, typography } from '../theme';
 import { useAuth } from '../context/AuthContext';
 
+const ROLES = [
+  { key: 'user',        icon: '☕', label: 'أبحث عن مساحة', sub: 'مستخدم' },
+  { key: 'cafe_owner',  icon: '🏪', label: 'أملك كافيه',    sub: 'صاحب كافيه' },
+];
+
 export default function LoginScreen() {
   const [tab, setTab] = useState('login');
+  const [role, setRole] = useState('user');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -30,7 +36,7 @@ export default function LoginScreen() {
       if (tab === 'login') {
         await signIn(email.trim(), password);
       } else {
-        await signUp(email.trim(), password, name.trim());
+        await signUp(email.trim(), password, name.trim(), role);
         Alert.alert('تم التسجيل', 'تحقق من بريدك الإلكتروني لتفعيل الحساب');
       }
     } catch (e) {
@@ -43,10 +49,7 @@ export default function LoginScreen() {
   return (
     <SafeAreaView style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={colors.background} />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-      >
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <ScrollView
           contentContainerStyle={styles.container}
           keyboardShouldPersistTaps="handled"
@@ -78,6 +81,29 @@ export default function LoginScreen() {
           </View>
 
           <View style={styles.form}>
+
+            {/* Role selector — register only */}
+            {tab === 'register' && (
+              <View style={styles.roleSection}>
+                <Text style={styles.roleTitle}>أنت...</Text>
+                <View style={styles.roleCards}>
+                  {ROLES.map(r => (
+                    <TouchableOpacity
+                      key={r.key}
+                      style={[styles.roleCard, role === r.key && styles.roleCardActive]}
+                      onPress={() => setRole(r.key)}
+                    >
+                      <Text style={styles.roleIcon}>{r.icon}</Text>
+                      <Text style={[styles.roleLabel, role === r.key && styles.roleLabelActive]}>
+                        {r.label}
+                      </Text>
+                      <Text style={styles.roleSub}>{r.sub}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+
             {tab === 'register' && (
               <View style={styles.field}>
                 <Text style={styles.fieldLabel}>الاسم</Text>
@@ -145,20 +171,16 @@ const styles = StyleSheet.create({
   logoArea: { alignItems: 'center', marginBottom: 44 },
   logoCircle: {
     width: 76, height: 76, borderRadius: radius.full,
-    backgroundColor: colors.primaryGlow,
-    borderWidth: 2, borderColor: colors.primary,
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: spacing.lg,
+    backgroundColor: colors.primaryGlow, borderWidth: 2, borderColor: colors.primary,
+    alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg,
   },
   logoIcon: { fontSize: 34, fontWeight: '700', color: colors.primary },
   appName: { fontSize: 30, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, marginBottom: 6 },
   tagline: { ...typography.caption },
 
   tabs: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border,
+    flexDirection: 'row', backgroundColor: colors.surface,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     padding: 4, marginBottom: spacing.xl,
   },
   tab: { flex: 1, paddingVertical: 10, borderRadius: radius.sm, alignItems: 'center' },
@@ -167,21 +189,31 @@ const styles = StyleSheet.create({
   tabTextActive: { color: colors.primary, fontWeight: '700' },
 
   form: { gap: spacing.lg },
+
+  roleSection: { gap: spacing.sm },
+  roleTitle: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.5 },
+  roleCards: { flexDirection: 'row', gap: spacing.md },
+  roleCard: {
+    flex: 1, backgroundColor: colors.surface,
+    borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.lg, alignItems: 'center', gap: 6,
+  },
+  roleCardActive: { backgroundColor: colors.primaryGlow, borderColor: colors.primary },
+  roleIcon: { fontSize: 28 },
+  roleLabel: { fontSize: 13, fontWeight: '700', color: colors.textSecondary, textAlign: 'center' },
+  roleLabelActive: { color: colors.primary },
+  roleSub: { fontSize: 10, color: colors.textMuted },
+
   field: { gap: 6 },
   fieldLabel: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.5 },
   input: {
-    backgroundColor: colors.surface,
-    borderWidth: 1, borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md, paddingVertical: 14,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: 14,
     color: colors.textPrimary, fontSize: 14,
   },
   submitBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: spacing.sm,
+    backgroundColor: colors.primary, borderRadius: radius.md,
+    paddingVertical: 16, alignItems: 'center', marginTop: spacing.sm,
   },
   submitText: { fontSize: 15, fontWeight: '700', color: colors.background },
 });

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext({});
@@ -25,19 +26,19 @@ export function AuthProvider({ children }) {
     if (error) throw error;
   }
 
-  async function signUp(email, password, name) {
+  async function signUp(email, password, name, role = 'user') {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: name } },
+      options: { data: { full_name: name, role } },
     });
     if (error) throw error;
   }
 
   async function signOut() {
     setUser(null);
-    // scope:'local' clears AsyncStorage session without a server call
-    await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+    await AsyncStorage.clear().catch(() => {});
+    await supabase.auth.signOut().catch(() => {});
   }
 
   return (

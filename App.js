@@ -9,6 +9,8 @@ import HomeScreen from './src/screens/HomeScreen';
 import BookingScreen from './src/screens/BookingScreen';
 import BookingsListScreen from './src/screens/BookingsListScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import CafeRegistrationScreen from './src/screens/CafeRegistrationScreen';
+import CafeDashboardScreen from './src/screens/CafeDashboardScreen';
 import { colors } from './src/theme';
 
 const Stack = createNativeStackNavigator();
@@ -24,18 +26,26 @@ function AppNavigator() {
     );
   }
 
+  const role = user?.user_metadata?.role ?? 'user';
+
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {user ? (
+        {!user ? (
+          <Stack.Screen name="Login" component={LoginScreen} />
+        ) : role === 'cafe_owner' ? (
+          <>
+            <Stack.Screen name="CafeDashboard" component={CafeDashboardScreen} />
+            <Stack.Screen name="CafeRegistration" component={CafeRegistrationScreen} />
+          </>
+        ) : (
           <>
             <Stack.Screen name="Home" component={HomeScreen} />
             <Stack.Screen name="Booking" component={BookingScreen} />
             <Stack.Screen name="BookingsList" component={BookingsListScreen} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
+            <Stack.Screen name="CafeRegistration" component={CafeRegistrationScreen} />
           </>
-        ) : (
-          <Stack.Screen name="Login" component={LoginScreen} />
         )}
       </Stack.Navigator>
     </NavigationContainer>

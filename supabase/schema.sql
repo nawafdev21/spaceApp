@@ -5,20 +5,39 @@
 
 -- Cafes table
 create table if not exists cafes (
-  id           uuid primary key default gen_random_uuid(),
-  name         text not null,
-  area         text not null,
-  distance     text,
-  open_time    text,
-  total_seats  int default 0,
-  free_seats   int default 0,
-  private_seats int default 0,
-  wifi         text,
-  charging     boolean default false,
-  noise        text,
-  rating       numeric(2,1) default 0,
-  seats        text[] default '{}',
-  created_at   timestamptz default now()
+  id              uuid primary key default gen_random_uuid(),
+  name            text not null,
+  area            text not null,
+  distance        text,
+  open_time       text,
+  close_time      text,
+  friday_hours    text,
+  total_seats     int default 0,
+  free_seats      int default 0,
+  private_seats   int default 0,
+  wifi            text,
+  charging        boolean default false,
+  noise           text,
+  rating          numeric(2,1) default 0,
+  seats           text[] default '{}',
+  -- Location
+  maps_link       text,
+  address         text,
+  lat             numeric,
+  lng             numeric,
+  -- Contact & Social
+  phone           text,
+  instagram       text,
+  description     text,
+  -- Features
+  has_parking     boolean default false,
+  family_section  boolean default false,
+  min_consumption text,
+  payment_methods text[] default '{}',
+  -- Management
+  owner_id        uuid references auth.users(id) on delete set null,
+  status          text default 'active',
+  created_at      timestamptz default now()
 );
 
 -- Bookings table
@@ -38,8 +57,14 @@ alter table cafes    enable row level security;
 alter table bookings enable row level security;
 
 -- Policies
-create policy "Anyone can view cafes"
-  on cafes for select using (true);
+create policy "Anyone can view active cafes"
+  on cafes for select using (status = 'active' or auth.uid() = owner_id);
+
+create policy "Users can submit cafes"
+  on cafes for insert with check (auth.uid() = owner_id);
+
+create policy "Owners can update their cafe"
+  on cafes for update using (auth.uid() = owner_id);
 
 create policy "Users can view own bookings"
   on bookings for select using (auth.uid() = user_id);
