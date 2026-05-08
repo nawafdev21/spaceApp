@@ -3,7 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, SafeAreaView, StatusBar,
   KeyboardAvoidingView, Platform, ActivityIndicator,
-  Alert, ScrollView,
+  ScrollView,
 } from 'react-native';
 import { colors, spacing, radius, typography } from '../theme';
 import { useAuth } from '../context/AuthContext';
@@ -13,6 +13,30 @@ const ROLES = [
   { key: 'cafe_owner',  icon: '🏪', label: 'أملك كافيه',    sub: 'صاحب كافيه' },
 ];
 
+function translateError(msg) {
+  if (!msg) return 'حدث خطأ غير متوقع';
+  if (msg.includes('Invalid login credentials'))         return 'البريد الإلكتروني أو كلمة المرور غير صحيحة';
+  if (msg.includes('Email not confirmed'))               return 'الرجاء تأكيد بريدك الإلكتروني أولاً ثم سجّل الدخول';
+  if (msg.includes('User already registered'))           return 'هذا البريد الإلكتروني مسجّل مسبقاً';
+  if (msg.includes('Password should be at least'))       return 'كلمة المرور يجب أن تكون 6 أحرف على الأقل';
+  if (msg.includes('Unable to validate email address'))  return 'صيغة البريد الإلكتروني غير صحيحة';
+  if (msg.includes('signup is disabled'))                return 'التسجيل معطّل حالياً';
+  if (msg.includes('rate limit'))                        return 'محاولات كثيرة، انتظر قليلاً ثم حاول مجدداً';
+  return msg;
+}
+
+function Banner({ msg, type }) {
+  if (!msg) return null;
+  const isSuccess = type === 'success';
+  return (
+    <View style={[styles.banner, isSuccess ? styles.bannerSuccess : styles.bannerError]}>
+      <Text style={[styles.bannerText, isSuccess ? styles.bannerTextSuccess : styles.bannerTextError]}>
+        {msg}
+      </Text>
+    </View>
+  );
+}
+
 export default function LoginScreen() {
   const [tab, setTab] = useState('login');
   const [role, setRole] = useState('user');
@@ -20,15 +44,21 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [banner, setBanner] = useState(null);
   const { signIn, signUp } = useAuth();
 
+  function showMsg(msg, type = 'error') {
+    setBanner({ msg, type });
+  }
+
   async function handleSubmit() {
+    setBanner(null);
     if (!email.trim() || !password.trim()) {
-      Alert.alert('تنبيه', 'الرجاء إدخال البريد وكلمة المرور');
+      showMsg('الرجاء إدخال البريد الإلكتروني وكلمة المرور');
       return;
     }
     if (tab === 'register' && !name.trim()) {
-      Alert.alert('تنبيه', 'الرجاء إدخال اسمك');
+      showMsg('الرجاء إدخال اسمك');
       return;
     }
     setLoading(true);
@@ -37,10 +67,10 @@ export default function LoginScreen() {
         await signIn(email.trim(), password);
       } else {
         await signUp(email.trim(), password, name.trim(), role);
-        Alert.alert('تم التسجيل', 'تحقق من بريدك الإلكتروني لتفعيل الحساب');
+        showMsg('تم إنشاء الحساب — تحقق من بريدك الإلكتروني لتفعيل الحساب', 'success');
       }
     } catch (e) {
-      Alert.alert('خطأ', e.message);
+      showMsg(translateError(e.message));
     } finally {
       setLoading(false);
     }
@@ -79,6 +109,8 @@ export default function LoginScreen() {
               </TouchableOpacity>
             ))}
           </View>
+
+          <Banner msg={banner?.msg} type={banner?.type} />
 
           <View style={styles.form}>
 
@@ -167,6 +199,16 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   container: { flexGrow: 1, paddingHorizontal: spacing.xl, paddingTop: 60, paddingBottom: 40 },
+
+  banner: {
+    borderRadius: radius.md, borderWidth: 1,
+    paddingHorizontal: spacing.md, paddingVertical: 12, marginBottom: spacing.md,
+  },
+  bannerError:   { backgroundColor: colors.fullBg,      borderColor: colors.full },
+  bannerSuccess: { backgroundColor: colors.availableBg, borderColor: colors.available },
+  bannerText:    { fontSize: 13, textAlign: 'center', lineHeight: 20 },
+  bannerTextError:   { color: colors.full },
+  bannerTextSuccess: { color: colors.available },
 
   logoArea: { alignItems: 'center', marginBottom: 44 },
   logoCircle: {

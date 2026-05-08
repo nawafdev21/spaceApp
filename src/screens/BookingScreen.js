@@ -48,25 +48,23 @@ export default function BookingScreen({ route, navigation }) {
 
   const isReady = selTime && selDur && selSeat;
 
-  function handleConfirm() {
+  async function handleConfirm() {
     setConfirmed(true);
-    supabase.from('bookings').insert({
-      user_id: user.id,
+    const { error } = await supabase.from('bookings').insert({
+      user_id:   user.id,
+      cafe_id:   cafe.id ?? null,
       cafe_name: cafe.name,
       time_slot: selTime.label,
-      duration: selDur.value,
+      duration:  selDur.value,
       seat_type: selSeat.label,
-      status: 'confirmed',
-    }).then(({ error }) => {
-      if (error) console.warn('booking error:', error.message);
+      status:    'pending',
     });
-    setTimeout(() => {
-      Alert.alert(
-        'تم الحجز! ✓',
-        `سيصلك إشعار قبل موعدك ${selTime.label} بـ 15 دقيقة`,
-        [{ text: 'ممتاز', onPress: () => navigation.goBack() }]
-      );
-    }, 600);
+    if (error) console.warn('booking error:', error.message);
+    Alert.alert(
+      'تم إرسال طلب الحجز ✓',
+      `طلبك في ${cafe.name} الساعة ${selTime.label} بانتظار تأكيد الكافيه`,
+      [{ text: 'ممتاز', onPress: () => navigation.navigate('BookingsList') }]
+    );
   }
 
   return (

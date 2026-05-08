@@ -11,6 +11,7 @@ import BookingsListScreen from './src/screens/BookingsListScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import CafeRegistrationScreen from './src/screens/CafeRegistrationScreen';
 import CafeDashboardScreen from './src/screens/CafeDashboardScreen';
+import AdminDashboardScreen from './src/screens/AdminDashboardScreen';
 import { colors } from './src/theme';
 
 const Stack = createNativeStackNavigator();
@@ -33,6 +34,8 @@ function AppNavigator() {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!user ? (
           <Stack.Screen name="Login" component={LoginScreen} />
+        ) : role === 'admin' ? (
+          <Stack.Screen name="AdminDashboard" component={AdminDashboardScreen} />
         ) : role === 'cafe_owner' ? (
           <>
             <Stack.Screen name="CafeDashboard" component={CafeDashboardScreen} />

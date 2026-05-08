@@ -6,6 +6,7 @@ import {
 import { colors, spacing, radius, typography } from '../theme';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import BottomTabBar from '../components/BottomTabBar';
 
 const CAFES = [
   {
@@ -275,20 +276,7 @@ export default function HomeScreen({ navigation }) {
         )}
       </ScrollView>
 
-      {/* Bottom nav */}
-      <View style={styles.bottomNav}>
-        {[
-          { icon: '⊞', label: 'الرئيسية', active: true, onPress: () => {} },
-          { icon: '◎', label: 'اكتشف', active: false, onPress: () => {} },
-          { icon: '◫', label: 'حجوزاتي', active: false, onPress: () => navigation.navigate('BookingsList') },
-          { icon: '◯', label: 'حسابي', active: false, onPress: () => navigation.navigate('Profile') },
-        ].map(n => (
-          <TouchableOpacity key={n.label} style={styles.navItem} onPress={n.onPress}>
-            <Text style={[styles.navIcon, n.active && { color: colors.primary }]}>{n.icon}</Text>
-            <Text style={[styles.navLabel, n.active && { color: colors.primary }]}>{n.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      <BottomTabBar active="Home" navigation={navigation} />
     </SafeAreaView>
   );
 }
@@ -350,8 +338,4 @@ const styles = StyleSheet.create({
   emptyIcon: { fontSize: 36, color: colors.textMuted, marginBottom: spacing.md },
   emptyText: { color: colors.textSecondary, fontSize: 15 },
 
-  bottomNav: { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border, paddingBottom: 20, paddingTop: 12 },
-  navItem: { flex: 1, alignItems: 'center', gap: 3 },
-  navIcon: { fontSize: 20, color: colors.textMuted },
-  navLabel: { fontSize: 10, color: colors.textMuted },
 });

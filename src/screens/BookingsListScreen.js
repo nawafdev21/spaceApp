@@ -6,11 +6,13 @@ import {
 import { colors, spacing, radius, typography } from '../theme';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import BottomTabBar from '../components/BottomTabBar';
 
 const STATUS_MAP = {
+  pending:   { bg: colors.lowBg,       text: colors.low,       label: 'بانتظار التأكيد' },
   confirmed: { bg: colors.availableBg, text: colors.available, label: 'مؤكد' },
-  cancelled: { bg: colors.fullBg, text: colors.full, label: 'ملغي' },
-  completed: { bg: colors.surface, text: colors.textMuted, label: 'منتهي' },
+  cancelled: { bg: colors.fullBg,      text: colors.full,      label: 'ملغي' },
+  completed: { bg: colors.surface,     text: colors.textMuted, label: 'منتهي' },
 };
 
 function BookingCard({ booking }) {
@@ -71,11 +73,7 @@ export default function BookingsListScreen({ navigation }) {
       <StatusBar barStyle="light-content" backgroundColor={colors.background} />
 
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Text style={styles.backIcon}>‹</Text>
-        </TouchableOpacity>
         <Text style={styles.title}>حجوزاتي</Text>
-        <View style={{ width: 36 }} />
       </View>
 
       {loading ? (
@@ -96,6 +94,7 @@ export default function BookingsListScreen({ navigation }) {
           {bookings.map(b => <BookingCard key={b.id} booking={b} />)}
         </ScrollView>
       )}
+      <BottomTabBar active="BookingsList" navigation={navigation} />
     </SafeAreaView>
   );
 }
@@ -125,7 +124,7 @@ const styles = StyleSheet.create({
   },
   startBtnText: { color: colors.primary, fontWeight: '700', fontSize: 14 },
 
-  list: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 40, gap: spacing.md },
+  list: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 90, gap: spacing.md },
 
   card: {
     backgroundColor: colors.card, borderRadius: radius.lg,

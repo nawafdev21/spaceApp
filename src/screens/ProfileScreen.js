@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { colors, spacing, radius, typography } from '../theme';
 import { useAuth } from '../context/AuthContext';
+import BottomTabBar from '../components/BottomTabBar';
 
 export default function ProfileScreen({ navigation }) {
   const { user, signOut } = useAuth();
@@ -34,11 +35,7 @@ export default function ProfileScreen({ navigation }) {
       <StatusBar barStyle="light-content" backgroundColor={colors.background} />
 
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Text style={styles.backIcon}>‹</Text>
-        </TouchableOpacity>
         <Text style={styles.title}>حسابي</Text>
-        <View style={{ width: 36 }} />
       </View>
 
       {/* Avatar + info */}
@@ -79,6 +76,8 @@ export default function ProfileScreen({ navigation }) {
       <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
         <Text style={styles.signOutText}>تسجيل الخروج</Text>
       </TouchableOpacity>
+
+      <BottomTabBar active="Profile" navigation={navigation} />
     </SafeAreaView>
   );
 }

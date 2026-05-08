@@ -1,10 +1,25 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView,
   StyleSheet, SafeAreaView, StatusBar,
   ActivityIndicator, Alert,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { colors, spacing, radius, typography } from '../theme';
+
+function calcEndTime(startSlot, durationHours) {
+  const parts = startSlot?.split(' ');
+  if (!parts || parts.length < 2) return '—';
+  const [time, period] = parts;
+  const [h, m] = time.split(':').map(Number);
+  let hour24 = h;
+  if (period === 'م' && h !== 12) hour24 += 12;
+  if (period === 'ص' && h === 12) hour24 = 0;
+  const endHour24 = (hour24 + durationHours) % 24;
+  const endPeriod = endHour24 < 12 ? 'ص' : 'م';
+  const endHour12 = endHour24 % 12 || 12;
+  return `${endHour12}:${String(m).padStart(2, '0')} ${endPeriod}`;
+}
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 
@@ -72,22 +87,35 @@ function SeatsControl({ cafe, onUpdate }) {
 export default function CafeDashboardScreen({ navigation }) {
   const { user, signOut } = useAuth();
   const [cafe, setCafe] = useState(null);
+  const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const ownerName = user?.user_metadata?.full_name ?? user?.email ?? '';
 
-  useEffect(() => {
-    async function fetchCafe() {
-      const { data, error } = await supabase
-        .from('cafes')
+  const fetchData = useCallback(async () => {
+    const { data: cafeData } = await supabase
+      .from('cafes').select('*').eq('owner_id', user.id).maybeSingle();
+    setCafe(cafeData);
+
+    if (cafeData?.id) {
+      const { data: bookingsData } = await supabase
+        .from('bookings')
         .select('*')
-        .eq('owner_id', user.id)
-        .maybeSingle();
-      if (!error) setCafe(data);
-      setLoading(false);
+        .eq('cafe_id', cafeData.id)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      setBookings(bookingsData ?? []);
     }
-    fetchCafe();
-  }, []);
+    setLoading(false);
+  }, [user.id]);
+
+  useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
+
+  async function updateBooking(id, status) {
+    const { error } = await supabase.from('bookings').update({ status }).eq('id', id);
+    if (error) { Alert.alert('خطأ', error.message); return; }
+    setBookings(prev => prev.map(b => b.id === id ? { ...b, status } : b));
+  }
 
   function handleSignOut() {
     Alert.alert('تسجيل الخروج', 'هل أنت متأكد؟', [
@@ -192,6 +220,74 @@ export default function CafeDashboardScreen({ navigation }) {
               </View>
             ))}
           </View>
+
+          {/* Incoming bookings */}
+          {cafe.status === 'active' && (
+            <View style={{ gap: spacing.sm }}>
+              <Text style={styles.sectionTitle}>
+                {`الحجوزات الواردة${bookings.length > 0 ? ` (${bookings.length})` : ''}`}
+              </Text>
+              {bookings.length === 0 ? (
+                <View style={styles.emptyBookings}>
+                  <Text style={styles.emptyBookingsText}>لا توجد حجوزات بعد</Text>
+                </View>
+              ) : (
+                bookings.map(b => {
+                  const endTime = calcEndTime(b.time_slot, b.duration);
+                  const date = new Date(b.created_at).toLocaleDateString('ar-SA', {
+                    weekday: 'short', month: 'short', day: 'numeric',
+                  });
+                  const isPending = b.status === 'pending';
+                  return (
+                    <View key={b.id} style={styles.bookingCard}>
+                      <View style={styles.bookingRow}>
+                        <Text style={styles.bookingTime}>
+                          {b.time_slot} ← {endTime}
+                        </Text>
+                        <View style={[
+                          styles.bookingBadge,
+                          isPending ? styles.badgePending :
+                          b.status === 'confirmed' ? styles.badgeConfirmed : styles.badgeDone,
+                        ]}>
+                          <Text style={[
+                            styles.bookingBadgeText,
+                            { color: isPending ? colors.low : b.status === 'confirmed' ? colors.available : colors.textMuted },
+                          ]}>
+                            {isPending ? 'انتظار' : b.status === 'confirmed' ? 'مؤكد' : 'منتهي'}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.bookingDetails}>
+                        <Text style={styles.bookingSeat}>◈ {b.seat_type}</Text>
+                        <Text style={styles.bookingMeta}>·</Text>
+                        <Text style={styles.bookingMeta}>{b.duration} ساعة</Text>
+                        <Text style={styles.bookingMeta}>·</Text>
+                        <Text style={styles.bookingMeta}>{date}</Text>
+                      </View>
+
+                      {isPending && (
+                        <View style={styles.bookingActions}>
+                          <TouchableOpacity
+                            style={styles.rejectBtn}
+                            onPress={() => updateBooking(b.id, 'cancelled')}
+                          >
+                            <Text style={styles.rejectBtnText}>رفض</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.approveBtn}
+                            onPress={() => updateBooking(b.id, 'confirmed')}
+                          >
+                            <Text style={styles.approveBtnText}>قبول ✓</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })
+              )}
+            </View>
+          )}
 
           {/* Edit cafe */}
           <TouchableOpacity
@@ -300,4 +396,40 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, paddingVertical: 14, alignItems: 'center',
   },
   editBtnText: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },
+
+  sectionTitle: { fontSize: 15, fontWeight: '700', color: colors.textSecondary, marginBottom: spacing.sm },
+
+  emptyBookings: {
+    backgroundColor: colors.surface, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border,
+    padding: spacing.lg, alignItems: 'center',
+  },
+  emptyBookingsText: { fontSize: 13, color: colors.textMuted },
+
+  bookingCard: {
+    backgroundColor: colors.surface, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, gap: 8,
+  },
+  bookingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  bookingTime: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  bookingBadge: { paddingVertical: 3, paddingHorizontal: 10, borderRadius: radius.full },
+  badgePending:   { backgroundColor: colors.lowBg },
+  badgeConfirmed: { backgroundColor: colors.availableBg },
+  badgeDone:      { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  bookingBadgeText: { fontSize: 11, fontWeight: '600' },
+  bookingDetails: { flexDirection: 'row', gap: 6, alignItems: 'center' },
+  bookingSeat: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
+  bookingMeta: { fontSize: 12, color: colors.textMuted },
+  bookingActions: { flexDirection: 'row', gap: spacing.sm, marginTop: 4 },
+  rejectBtn: {
+    flex: 1, paddingVertical: 8, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.full, alignItems: 'center',
+  },
+  rejectBtnText: { fontSize: 13, fontWeight: '700', color: colors.full },
+  approveBtn: {
+    flex: 2, paddingVertical: 8, borderRadius: radius.md,
+    backgroundColor: colors.primary, alignItems: 'center',
+  },
+  approveBtnText: { fontSize: 13, fontWeight: '700', color: colors.background },
 });
