@@ -29,13 +29,13 @@ const DURATIONS = [
   { label: '+4 ساعات', value: 4, sub: 'جلسة طويلة' },
 ];
 
-const SEAT_TYPES = [
-  { id: 'open', icon: '⬚', label: 'مفتوح', sub: 'طاولة عامة', available: true },
-  { id: 'quiet', icon: '◈', label: 'هادئ', sub: 'زاوية معزولة', available: true },
-  { id: 'private', icon: '⬡', label: 'خاص', sub: 'غرفة مستقلة', available: true },
-  { id: 'podcast', icon: '◉', label: 'بودكاست', sub: 'غير متاح', available: false },
-  { id: 'bar', icon: '◌', label: 'بار', sub: 'بجانب المطبخ', available: true },
-  { id: 'outdoor', icon: '◎', label: 'خارجي', sub: 'تراس مفتوح', available: true },
+const ALL_SEAT_TYPES = [
+  { id: 'open',    icon: '⬚', label: 'مفتوح',   sub: 'طاولة عامة',    col: 'open_seats' },
+  { id: 'quiet',   icon: '◈', label: 'هادئ',    sub: 'زاوية معزولة',  col: 'quiet_seats' },
+  { id: 'private', icon: '⬡', label: 'خاص',     sub: 'غرفة مستقلة',  col: 'private_seats' },
+  { id: 'outdoor', icon: '◎', label: 'خارجي',   sub: 'تراس مفتوح',   col: 'outdoor_seats' },
+  { id: 'bar',     icon: '◌', label: 'بار',     sub: 'بجانب المطبخ', col: 'bar_seats' },
+  { id: 'podcast', icon: '◉', label: 'بودكاست', sub: 'غرفة تسجيل',   col: 'podcast_seats' },
 ];
 
 export default function BookingScreen({ route, navigation }) {
@@ -45,6 +45,11 @@ export default function BookingScreen({ route, navigation }) {
   const [selDur, setSelDur] = useState(null);
   const [selSeat, setSelSeat] = useState(null);
   const [confirmed, setConfirmed] = useState(false);
+
+  // Show only seat types the cafe offers; fall back to all if none configured
+  const SEAT_TYPES = ALL_SEAT_TYPES.filter(t => (cafe[t.col] ?? 0) > 0).length > 0
+    ? ALL_SEAT_TYPES.filter(t => (cafe[t.col] ?? 0) > 0).map(t => ({ ...t, available: true }))
+    : ALL_SEAT_TYPES.map(t => ({ ...t, available: t.id !== 'podcast' }));
 
   const isReady = selTime && selDur && selSeat;
 
