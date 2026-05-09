@@ -44,11 +44,12 @@ create table if not exists cafes (
 create table if not exists bookings (
   id         uuid primary key default gen_random_uuid(),
   user_id    uuid references auth.users(id) on delete cascade not null,
+  cafe_id    uuid references cafes(id) on delete set null,
   cafe_name  text not null,
   time_slot  text not null,
   duration   int not null,
   seat_type  text not null,
-  status     text default 'confirmed',
+  status     text default 'pending',
   created_at timestamptz default now()
 );
 
@@ -71,6 +72,34 @@ create policy "Users can view own bookings"
 
 create policy "Users can insert own bookings"
   on bookings for insert with check (auth.uid() = user_id);
+
+create policy "Users can cancel own bookings"
+  on bookings for update using (auth.uid() = user_id);
+
+-- Cafe owners can view bookings for their cafe and update status
+create policy "Cafe owners can view their cafe bookings"
+  on bookings for select using (
+    cafe_id in (select id from cafes where owner_id = auth.uid())
+  );
+
+create policy "Cafe owners can update their cafe bookings"
+  on bookings for update using (
+    cafe_id in (select id from cafes where owner_id = auth.uid())
+  );
+
+-- Favorites table
+create table if not exists favorites (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid references auth.users(id) on delete cascade not null,
+  cafe_id    uuid references cafes(id) on delete cascade not null,
+  created_at timestamptz default now(),
+  unique(user_id, cafe_id)
+);
+
+alter table favorites enable row level security;
+
+create policy "Users manage own favorites"
+  on favorites for all using (auth.uid() = user_id);
 
 -- Sample data (نفس البيانات في التطبيق)
 insert into cafes (name, area, distance, open_time, total_seats, free_seats, private_seats, wifi, charging, noise, rating, seats)

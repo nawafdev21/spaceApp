@@ -3,9 +3,10 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { colors, spacing, radius } from '../theme';
 
 const TABS = [
-  { name: 'Home',         icon: '⊙', label: 'استكشف' },
+  { name: 'Home',         icon: '⊙', label: 'استكشف'  },
   { name: 'BookingsList', icon: '◫', label: 'حجوزاتي' },
-  { name: 'Profile',      icon: '◯', label: 'حسابي'  },
+  { name: 'Favorites',   icon: '♡', label: 'مفضلة'   },
+  { name: 'Profile',     icon: '◯', label: 'حسابي'   },
 ];
 
 export default function BottomTabBar({ active, navigation }) {
@@ -19,7 +20,9 @@ export default function BottomTabBar({ active, navigation }) {
             style={styles.item}
             onPress={() => navigation.navigate(tab.name)}
           >
-            <Text style={[styles.icon, isActive && styles.iconActive]}>{tab.icon}</Text>
+            <Text style={[styles.icon, isActive && styles.iconActive]}>
+              {tab.name === 'Favorites' && isActive ? '♥' : tab.icon}
+            </Text>
             <Text style={[styles.label, isActive && styles.labelActive]}>{tab.label}</Text>
           </TouchableOpacity>
         );

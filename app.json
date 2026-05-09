@@ -1,11 +1,40 @@
 {
   "expo": {
+    "name": "مساحتي",
+    "slug": "masakti",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "masakti",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0A0A0F"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.awaf.masakti",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "نحتاج موقعك لإظهار الكافيهات الأقرب إليك"
+      },
+      "entitlements": {
+        "aps-environment": "production"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0A0A0F"
+      },
+      "package": "com.awaf.masakti",
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
+    },
     "extra": {
       "eas": {
         "projectId": "0a11a2a8-1ba8-429c-b270-22e62d369cee"
       }
     },
-    "owner": "awaf.dev21",
-    "slug": "spaceapp"
+    "owner": "awaf.dev21"
   }
 }

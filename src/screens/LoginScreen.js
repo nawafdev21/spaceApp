@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import { colors, spacing, radius, typography } from '../theme';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 
 const ROLES = [
   { key: 'user',        icon: '☕', label: 'أبحث عن مساحة', sub: 'مستخدم' },
@@ -45,7 +46,24 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [banner, setBanner] = useState(null);
+  const [forgotMode, setForgotMode] = useState(false);
   const { signIn, signUp } = useAuth();
+
+  async function handleForgotPassword() {
+    if (!email.trim()) {
+      showMsg('أدخل بريدك الإلكتروني أولاً');
+      return;
+    }
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim());
+    setLoading(false);
+    if (error) {
+      showMsg(translateError(error.message));
+    } else {
+      showMsg('تم إرسال رابط إعادة تعيين كلمة المرور — تحقق من بريدك الإلكتروني', 'success');
+      setForgotMode(false);
+    }
+  }
 
   function showMsg(msg, type = 'error') {
     setBanner({ msg, type });
@@ -165,27 +183,36 @@ export default function LoginScreen() {
             </View>
 
             <View style={styles.field}>
-              <Text style={styles.fieldLabel}>كلمة المرور</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="••••••••"
-                placeholderTextColor={colors.textMuted}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                textAlign="right"
-              />
+              <View style={styles.fieldLabelRow}>
+                <Text style={styles.fieldLabel}>كلمة المرور</Text>
+                {tab === 'login' && (
+                  <TouchableOpacity onPress={() => { setForgotMode(f => !f); setBanner(null); }}>
+                    <Text style={styles.forgotLink}>{forgotMode ? 'إلغاء' : 'نسيت كلمة المرور؟'}</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              {!forgotMode && (
+                <TextInput
+                  style={styles.input}
+                  placeholder="••••••••"
+                  placeholderTextColor={colors.textMuted}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry
+                  textAlign="right"
+                />
+              )}
             </View>
 
             <TouchableOpacity
               style={[styles.submitBtn, loading && { opacity: 0.7 }]}
-              onPress={handleSubmit}
+              onPress={forgotMode ? handleForgotPassword : handleSubmit}
               disabled={loading}
             >
               {loading
                 ? <ActivityIndicator color={colors.background} />
                 : <Text style={styles.submitText}>
-                    {tab === 'login' ? 'دخول' : 'إنشاء الحساب'}
+                    {forgotMode ? 'إرسال رابط الاسترداد' : tab === 'login' ? 'دخول' : 'إنشاء الحساب'}
                   </Text>
               }
             </TouchableOpacity>
@@ -247,7 +274,9 @@ const styles = StyleSheet.create({
   roleSub: { fontSize: 10, color: colors.textMuted },
 
   field: { gap: 6 },
+  fieldLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   fieldLabel: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.5 },
+  forgotLink: { fontSize: 12, color: colors.primary, fontWeight: '600' },
   input: {
     backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
     borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: 14,

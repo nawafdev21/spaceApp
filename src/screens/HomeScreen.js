@@ -1,12 +1,30 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, StatusBar, TextInput, SafeAreaView, Alert,
+  StyleSheet, StatusBar, TextInput, SafeAreaView,
+  RefreshControl, Image, ActivityIndicator,
 } from 'react-native';
+import * as Location from 'expo-location';
 import { colors, spacing, radius, typography } from '../theme';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import BottomTabBar from '../components/BottomTabBar';
+
+const PAGE_SIZE = 10;
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function getMapThumbnail(lat, lng) {
+  if (!lat || !lng) return null;
+  return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lng}&zoom=16&size=600x300&markers=${lat},${lng},ol-marker`;
+}
 
 const CAFES = [
   {
@@ -105,12 +123,16 @@ function SeatMap({ seats }) {
 }
 
 function CafeCard({ cafe, onPress }) {
+  const distLabel = cafe.distanceLabel || cafe.distance || '';
   return (
     <TouchableOpacity style={styles.cafeCard} onPress={() => onPress(cafe)} activeOpacity={0.75}>
+      {cafe.photo_url ? (
+        <Image source={{ uri: cafe.photo_url }} style={styles.cafePhoto} resizeMode="cover" />
+      ) : null}
       <View style={styles.cafeCardTop}>
         <View style={{ flex: 1 }}>
           <Text style={styles.cafeName}>{cafe.name}</Text>
-          <Text style={styles.cafeSub}>{cafe.area} · {cafe.distance}</Text>
+          <Text style={styles.cafeSub}>{cafe.area}{distLabel ? ` · ${distLabel}` : ''}</Text>
         </View>
         <AvailBadge free={cafe.freeSeats} total={cafe.totalSeats} />
       </View>
@@ -138,11 +160,9 @@ function CafeCard({ cafe, onPress }) {
         )}
       </View>
 
-      {cafe.freeSeats > 0 && (
-        <TouchableOpacity style={styles.bookNowBtn} onPress={() => onPress(cafe)}>
-          <Text style={styles.bookNowText}>احجز الآن</Text>
-        </TouchableOpacity>
-      )}
+      <TouchableOpacity style={styles.bookNowBtn} onPress={() => onPress(cafe)}>
+        <Text style={styles.bookNowText}>عرض التفاصيل</Text>
+      </TouchableOpacity>
     </TouchableOpacity>
   );
 }
@@ -151,29 +171,93 @@ export default function HomeScreen({ navigation }) {
   const [activeFilter, setActiveFilter] = useState('الكل');
   const [search, setSearch] = useState('');
   const [cafes, setCafes] = useState(CAFES);
+  const [refreshing, setRefreshing] = useState(false);
+  const [netError, setNetError] = useState(false);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [userCoords, setUserCoords] = useState(null);
   const { user } = useAuth();
 
-  useEffect(() => {
-    async function fetchCafes() {
-      const { data, error } = await supabase.from('cafes').select('*');
-      if (!error && data?.length) {
-        setCafes(data.map(c => ({
+  const fetchCafes = useCallback(async (pageNum = 0, coords = null) => {
+    try {
+      const from = pageNum * PAGE_SIZE;
+      const to   = from + PAGE_SIZE - 1;
+      const { data, error } = await supabase.from('cafes').select('*').range(from, to);
+      if (error) throw error;
+      const mapped = (data ?? []).map(c => {
+        const realDist = coords && c.lat && c.lng
+          ? haversine(coords.latitude, coords.longitude, c.lat, c.lng)
+          : null;
+        return {
           ...c,
-          freeSeats: c.free_seats,
+          freeSeats:    c.free_seats,
           privateSeats: c.private_seats,
-          openTime: c.open_time,
-          totalSeats: c.total_seats,
-        })));
-      }
+          openTime:     c.open_time,
+          totalSeats:   c.total_seats,
+          realDistance: realDist,
+          distanceLabel: realDist != null
+            ? realDist < 1 ? `${Math.round(realDist * 1000)} م` : `${realDist.toFixed(1)} كم`
+            : (c.distance ?? ''),
+        };
+      });
+      if (pageNum === 0) setCafes(mapped.length ? mapped : CAFES);
+      else setCafes(prev => [...prev, ...mapped]);
+      setHasMore(mapped.length === PAGE_SIZE);
+      setNetError(false);
+    } catch {
+      if (pageNum === 0) setNetError(true);
     }
-    fetchCafes();
   }, []);
 
-  const filtered = cafes.filter(c => {
+  useEffect(() => {
+    async function init() {
+      let coords = null;
+      try {
+        const { status: current } = await Location.getForegroundPermissionsAsync();
+        if (current === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          coords = loc.coords;
+          setUserCoords(coords);
+        } else if (current === 'undetermined') {
+          const { status: asked } = await Location.requestForegroundPermissionsAsync();
+          if (asked === 'granted') {
+            const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+            coords = loc.coords;
+            setUserCoords(coords);
+          }
+        }
+      } catch {}
+      await fetchCafes(0, coords);
+    }
+    init();
+  }, [fetchCafes]);
+
+  async function onRefresh() {
+    setRefreshing(true);
+    setPage(0);
+    await fetchCafes(0, userCoords);
+    setRefreshing(false);
+  }
+
+  async function loadMore() {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    const next = page + 1;
+    setPage(next);
+    await fetchCafes(next, userCoords);
+    setLoadingMore(false);
+  }
+
+  const sortedCafes = activeFilter === 'الأقرب' && userCoords
+    ? [...cafes].sort((a, b) => (a.realDistance ?? 999) - (b.realDistance ?? 999))
+    : cafes;
+
+  const filtered = sortedCafes.filter(c => {
     if (search && !c.name.includes(search) && !c.area.includes(search)) return false;
     if (activeFilter === 'متاح الآن') return c.freeSeats > 0;
     if (activeFilter === 'غرف خاصة') return c.privateSeats > 0;
-    if (activeFilter === 'الأقرب') return parseFloat(c.distance) < 3.5;
+    if (activeFilter === 'الأقرب') return userCoords ? (c.realDistance ?? 999) < 5 : parseFloat(c.distance) < 3.5;
     if (activeFilter === 'الأهدأ') return c.noise === 'هادئ' || c.noise === 'هادئ جداً';
     return true;
   });
@@ -186,7 +270,9 @@ export default function HomeScreen({ navigation }) {
       <View style={styles.header}>
         <View>
           <Text style={styles.greeting}>صباح الإنتاج ☕</Text>
-          <Text style={styles.subtitle}>ابحث عن مكانك قبل ما تطلع</Text>
+          <Text style={styles.subtitle}>
+            {userCoords ? '📍 يعرض الأقرب إليك' : 'ابحث عن مكانك قبل ما تطلع'}
+          </Text>
         </View>
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>
@@ -259,20 +345,41 @@ export default function HomeScreen({ navigation }) {
         </View>
       </View>
 
-      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}>
+      {netError && (
+        <View style={styles.netErrorBanner}>
+          <Text style={styles.netErrorText}>⚠ تعذّر الاتصال — تحقق من الإنترنت واسحب للتحديث</Text>
+        </View>
+      )}
+
+      <ScrollView
+        style={{ flex: 1 }}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+      >
         {filtered.length === 0 ? (
           <View style={styles.empty}>
             <Text style={styles.emptyIcon}>◉</Text>
             <Text style={styles.emptyText}>لا توجد نتائج</Text>
           </View>
         ) : (
-          filtered.map(cafe => (
-            <CafeCard
-              key={cafe.id}
-              cafe={cafe}
-              onPress={c => navigation.navigate('Booking', { cafe: c })}
-            />
-          ))
+          <>
+            {filtered.map(cafe => (
+              <CafeCard
+                key={cafe.id}
+                cafe={cafe}
+                onPress={c => navigation.navigate('CafeDetail', { cafe: c })}
+              />
+            ))}
+            {hasMore && (
+              <TouchableOpacity style={styles.loadMoreBtn} onPress={loadMore} disabled={loadingMore}>
+                {loadingMore
+                  ? <ActivityIndicator color={colors.primary} />
+                  : <Text style={styles.loadMoreText}>تحميل المزيد</Text>
+                }
+              </TouchableOpacity>
+            )}
+          </>
         )}
       </ScrollView>
 
@@ -316,22 +423,28 @@ const styles = StyleSheet.create({
   legDot: { width: 10, height: 10, borderRadius: 3, borderWidth: 1 },
   legText: { fontSize: 11, color: colors.textMuted },
 
-  cafeCard: { backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.md },
-  cafeCardTop: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.md },
+  cafeCard: { backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md, overflow: 'hidden' },
+  cafePhoto: { width: '100%', height: 140 },
+  cafeCardTop: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.md, paddingHorizontal: spacing.lg, paddingTop: spacing.lg },
   cafeName: { ...typography.h2, fontSize: 15 },
   cafeSub: { ...typography.caption, marginTop: 2 },
   badge: { paddingVertical: 4, paddingHorizontal: 10, borderRadius: radius.full },
   badgeText: { fontSize: 11, fontWeight: '600' },
 
-  seatMap: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: spacing.md },
+  seatMap: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: spacing.md, paddingHorizontal: spacing.lg },
   seatDot: { width: 20, height: 20, borderRadius: 5, borderWidth: 1 },
 
-  cafeMeta: { flexDirection: 'row', gap: 14, flexWrap: 'wrap', marginBottom: spacing.md },
+  cafeMeta: { flexDirection: 'row', gap: 14, flexWrap: 'wrap', marginBottom: spacing.md, paddingHorizontal: spacing.lg },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   metaIcon: { fontSize: 12, color: colors.textMuted },
   metaText: { fontSize: 11, color: colors.textSecondary },
 
-  bookNowBtn: { backgroundColor: colors.primaryGlow, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.md, paddingVertical: 10, alignItems: 'center' },
+  netErrorBanner: { marginHorizontal: spacing.lg, marginBottom: spacing.sm, backgroundColor: colors.fullBg, borderRadius: radius.md, paddingVertical: 10, paddingHorizontal: spacing.md, borderWidth: 1, borderColor: colors.full },
+  netErrorText: { color: colors.full, fontSize: 12, fontWeight: '600', textAlign: 'center' },
+  loadMoreBtn: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center', marginBottom: spacing.md },
+  loadMoreText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
+
+  bookNowBtn: { backgroundColor: colors.primaryGlow, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.md, paddingVertical: 10, alignItems: 'center', marginHorizontal: spacing.lg, marginBottom: spacing.lg },
   bookNowText: { color: colors.primary, fontWeight: '700', fontSize: 13 },
 
   empty: { alignItems: 'center', paddingTop: 60 },

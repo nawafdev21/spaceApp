@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, SafeAreaView, StatusBar, Switch,
+  StyleSheet, SafeAreaView, StatusBar, Switch, Modal,
   ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { colors, spacing, radius, typography } from '../theme';
@@ -22,17 +22,75 @@ function extractCoordsFromMapsLink(url) {
   return null;
 }
 
-function StepIndicator({ current, total }) {
+const TIME_OPTIONS = [
+  '5:00 ص','5:30 ص','6:00 ص','6:30 ص','7:00 ص','7:30 ص',
+  '8:00 ص','8:30 ص','9:00 ص','9:30 ص','10:00 ص','10:30 ص',
+  '11:00 ص','11:30 ص','12:00 م','12:30 م','1:00 م','1:30 م',
+  '2:00 م','2:30 م','3:00 م','3:30 م','4:00 م','4:30 م',
+  '5:00 م','5:30 م','6:00 م','6:30 م','7:00 م','7:30 م',
+  '8:00 م','8:30 م','9:00 م','9:30 م','10:00 م','10:30 م',
+  '11:00 م','11:30 م','12:00 ص','12:30 ص','1:00 ص','1:30 ص','2:00 ص',
+];
+
+function TimePicker({ value, onChange, placeholder, error }) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <>
+      <TouchableOpacity
+        onPress={() => setVisible(true)}
+        style={[styles.input, error && styles.inputError, { justifyContent: 'center' }]}
+      >
+        <Text style={{ color: value ? colors.textPrimary : colors.textMuted, fontSize: 14 }}>
+          {value || placeholder || 'اختر الوقت'}
+        </Text>
+      </TouchableOpacity>
+      <Modal visible={visible} transparent animationType="slide" onRequestClose={() => setVisible(false)}>
+        <View style={pickerStyles.overlay}>
+          <View style={pickerStyles.sheet}>
+            <View style={pickerStyles.header}>
+              <TouchableOpacity onPress={() => setVisible(false)}>
+                <Text style={pickerStyles.cancel}>إلغاء</Text>
+              </TouchableOpacity>
+              <Text style={pickerStyles.title}>اختر الوقت</Text>
+            </View>
+            <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+              {TIME_OPTIONS.map(opt => (
+                <TouchableOpacity
+                  key={opt}
+                  style={[pickerStyles.option, value === opt && pickerStyles.optionSelected]}
+                  onPress={() => { onChange(opt); setVisible(false); }}
+                >
+                  <Text style={[pickerStyles.optionText, value === opt && pickerStyles.optionTextSelected]}>
+                    {opt}
+                  </Text>
+                  {value === opt && <Text style={{ color: colors.primary, fontSize: 16 }}>✓</Text>}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
+function StepIndicator({ current, total, isEditing, onPress }) {
   return (
     <View style={styles.stepRow}>
       {Array.from({ length: total }).map((_, i) => (
         <View key={i} style={styles.stepItem}>
-          <View style={[styles.stepDot, i <= current && styles.stepDotActive]}>
-            {i < current
-              ? <Text style={styles.stepCheck}>✓</Text>
-              : <Text style={[styles.stepNum, i === current && styles.stepNumActive]}>{i + 1}</Text>
-            }
-          </View>
+          <TouchableOpacity
+            onPress={() => onPress(i)}
+            disabled={!isEditing && i > current}
+          >
+            <View style={[styles.stepDot, i <= current && styles.stepDotActive]}>
+              {i < current
+                ? <Text style={styles.stepCheck}>✓</Text>
+                : <Text style={[styles.stepNum, i === current && styles.stepNumActive]}>{i + 1}</Text>
+              }
+            </View>
+          </TouchableOpacity>
           {i < total - 1 && (
             <View style={[styles.stepLine, i < current && styles.stepLineActive]} />
           )}
@@ -42,19 +100,24 @@ function StepIndicator({ current, total }) {
   );
 }
 
-function Field({ label, children }) {
+function Field({ label, children, error }) {
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
       {children}
+      {error ? <Text style={styles.fieldError}>⚠ {error}</Text> : null}
     </View>
   );
 }
 
-function Input({ value, onChangeText, placeholder, keyboardType, multiline, numberOfLines }) {
+function Input({ value, onChangeText, placeholder, keyboardType, multiline, numberOfLines, error }) {
   return (
     <TextInput
-      style={[styles.input, multiline && { height: 80, textAlignVertical: 'top', paddingTop: spacing.sm }]}
+      style={[
+        styles.input,
+        multiline && { height: 80, textAlignVertical: 'top', paddingTop: spacing.sm },
+        error && styles.inputError,
+      ]}
       value={value}
       onChangeText={onChangeText}
       placeholder={placeholder}
@@ -116,38 +179,44 @@ function Toggle({ label, value, onValueChange }) {
   );
 }
 
-export default function CafeRegistrationScreen({ navigation }) {
+export default function CafeRegistrationScreen({ navigation, route }) {
   const { user } = useAuth();
+  const existing = route.params?.cafe ?? null;
+  const isEditing = !!existing;
+
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState({});
 
   // Step 1 — Basic Info
-  const [name, setName] = useState('');
-  const [area, setArea] = useState('');
-  const [phone, setPhone] = useState('');
-  const [instagram, setInstagram] = useState('');
-  const [description, setDescription] = useState('');
+  const [name, setName] = useState(existing?.name ?? '');
+  const [area, setArea] = useState(existing?.area ?? '');
+  const [phone, setPhone] = useState(existing?.phone ?? '');
+  const [instagram, setInstagram] = useState(existing?.instagram ?? '');
+  const [description, setDescription] = useState(existing?.description ?? '');
 
   // Step 2 — Location
-  const [mapsLink, setMapsLink] = useState('');
-  const [address, setAddress] = useState('');
-  const [coordsFound, setCoordsFound] = useState(null);
+  const [mapsLink, setMapsLink] = useState(existing?.maps_link ?? '');
+  const [address, setAddress] = useState(existing?.address ?? '');
+  const [coordsFound, setCoordsFound] = useState(
+    existing?.lat ? { lat: existing.lat, lng: existing.lng } : null
+  );
 
   // Step 3 — Details
-  const [totalSeats, setTotalSeats] = useState('');
-  const [privateSeats, setPrivateSeats] = useState('');
-  const [openTime, setOpenTime] = useState('');
-  const [closeTime, setCloseTime] = useState('');
-  const [wifi, setWifi] = useState('سريع');
-  const [noise, setNoise] = useState('هادئ');
-  const [charging, setCharging] = useState(false);
+  const [totalSeats, setTotalSeats] = useState(existing?.total_seats?.toString() ?? '');
+  const [privateSeats, setPrivateSeats] = useState(existing?.private_seats?.toString() ?? '');
+  const [openTime, setOpenTime] = useState(existing?.open_time ?? '');
+  const [closeTime, setCloseTime] = useState(existing?.close_time ?? '');
+  const [wifi, setWifi] = useState(existing?.wifi ?? 'سريع');
+  const [noise, setNoise] = useState(existing?.noise ?? 'هادئ');
+  const [charging, setCharging] = useState(existing?.charging ?? false);
 
   // Step 4 — Features
-  const [hasParking, setHasParking] = useState(false);
-  const [familySection, setFamilySection] = useState(false);
-  const [minConsumption, setMinConsumption] = useState('');
-  const [payments, setPayments] = useState([]);
-  const [fridayHours, setFridayHours] = useState('');
+  const [hasParking, setHasParking] = useState(existing?.has_parking ?? false);
+  const [familySection, setFamilySection] = useState(existing?.family_section ?? false);
+  const [minConsumption, setMinConsumption] = useState(existing?.min_consumption ?? '');
+  const [payments, setPayments] = useState(existing?.payment_methods ?? []);
+  const [fridayHours, setFridayHours] = useState(existing?.friday_hours ?? '');
 
   function handleMapsLink(url) {
     setMapsLink(url);
@@ -162,29 +231,20 @@ export default function CafeRegistrationScreen({ navigation }) {
   }
 
   function validateStep() {
+    const newErrors = {};
     if (step === 0) {
-      if (!name.trim() || !area.trim()) {
-        Alert.alert('تنبيه', 'اسم الكافيه والحي مطلوبان');
-        return false;
-      }
+      if (!name.trim()) newErrors.name = 'الرجاء تعبئة هذا الحقل';
+      if (!area.trim()) newErrors.area = 'الرجاء تعبئة هذا الحقل';
     }
     if (step === 1) {
-      if (!mapsLink.trim()) {
-        Alert.alert('تنبيه', 'رابط قوقل ماب مطلوب');
-        return false;
-      }
+      if (!mapsLink.trim()) newErrors.mapsLink = 'الرجاء تعبئة هذا الحقل';
     }
     if (step === 2) {
-      if (!totalSeats || isNaN(Number(totalSeats))) {
-        Alert.alert('تنبيه', 'أدخل عدد المقاعد الكلي');
-        return false;
-      }
-      if (!openTime.trim()) {
-        Alert.alert('تنبيه', 'أدخل وقت الفتح');
-        return false;
-      }
+      if (!totalSeats || isNaN(Number(totalSeats))) newErrors.totalSeats = 'الرجاء تعبئة هذا الحقل';
+      if (!openTime.trim()) newErrors.openTime = 'الرجاء تعبئة هذا الحقل';
     }
-    return true;
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   }
 
   function nextStep() {
@@ -195,7 +255,7 @@ export default function CafeRegistrationScreen({ navigation }) {
 
   async function handleSubmit() {
     setLoading(true);
-    const { error } = await supabase.from('cafes').insert({
+    const payload = {
       name: name.trim(),
       area: area.trim(),
       phone: phone.trim() || null,
@@ -206,30 +266,26 @@ export default function CafeRegistrationScreen({ navigation }) {
       lat: coordsFound?.lat ?? null,
       lng: coordsFound?.lng ?? null,
       total_seats: Number(totalSeats) || 0,
-      free_seats: Number(totalSeats) || 0,
       private_seats: Number(privateSeats) || 0,
       open_time: openTime.trim(),
       close_time: closeTime.trim() || null,
       friday_hours: fridayHours.trim() || null,
-      wifi,
-      noise,
-      charging,
+      wifi, noise, charging,
       has_parking: hasParking,
       family_section: familySection,
       min_consumption: minConsumption.trim() || null,
       payment_methods: payments,
-      seats: [],
-      status: 'pending',
-      owner_id: user.id,
-    });
+    };
+    const query = isEditing
+      ? supabase.from('cafes').update(payload).eq('id', existing.id)
+      : supabase.from('cafes').insert({ ...payload, free_seats: Number(totalSeats) || 0, seats: [], status: 'pending', owner_id: user.id });
+
+    const { error } = await query;
     setLoading(false);
-    if (error) {
-      Alert.alert('خطأ', error.message);
-      return;
-    }
+    if (error) { Alert.alert('خطأ', error.message); return; }
     Alert.alert(
-      'تم الإرسال ✓',
-      'طلبك قيد المراجعة وسيُنشر بعد الموافقة',
+      isEditing ? 'تم الحفظ ✓' : 'تم الإرسال ✓',
+      isEditing ? 'تم تحديث بيانات الكافيه' : 'طلبك قيد المراجعة وسيُنشر بعد الموافقة',
       [{ text: 'ممتاز', onPress: () => navigation.goBack() }]
     );
   }
@@ -237,11 +293,11 @@ export default function CafeRegistrationScreen({ navigation }) {
   const stepContent = [
     // Step 0 — Basic Info
     <>
-      <Field label="اسم الكافيه *">
-        <Input value={name} onChangeText={setName} placeholder="مثال: كافيه السكون" />
+      <Field label="اسم الكافيه *" error={errors.name}>
+        <Input value={name} onChangeText={t => { setName(t); setErrors(e => ({ ...e, name: '' })); }} placeholder="مثال: كافيه السكون" error={!!errors.name} />
       </Field>
-      <Field label="الحي / المنطقة *">
-        <Input value={area} onChangeText={setArea} placeholder="مثال: حي النزهة، الرياض" />
+      <Field label="الحي / المنطقة *" error={errors.area}>
+        <Input value={area} onChangeText={t => { setArea(t); setErrors(e => ({ ...e, area: '' })); }} placeholder="مثال: حي النزهة، الرياض" error={!!errors.area} />
       </Field>
       <Field label="رقم التواصل">
         <Input value={phone} onChangeText={setPhone} placeholder="05xxxxxxxx" keyboardType="phone-pad" />
@@ -256,8 +312,8 @@ export default function CafeRegistrationScreen({ navigation }) {
 
     // Step 1 — Location
     <>
-      <Field label="رابط قوقل ماب *">
-        <Input value={mapsLink} onChangeText={handleMapsLink} placeholder="https://maps.google.com/..." />
+      <Field label="رابط قوقل ماب *" error={errors.mapsLink}>
+        <Input value={mapsLink} onChangeText={t => { handleMapsLink(t); setErrors(e => ({ ...e, mapsLink: '' })); }} placeholder="https://maps.google.com/..." error={!!errors.mapsLink} />
         {mapsLink.length > 0 && (
           <View style={[styles.coordBadge, coordsFound ? styles.coordFound : styles.coordNotFound]}>
             <Text style={styles.coordText}>
@@ -281,19 +337,24 @@ export default function CafeRegistrationScreen({ navigation }) {
     // Step 2 — Details
     <>
       <View style={styles.row}>
-        <Field label="المقاعد الكلية *">
-          <Input value={totalSeats} onChangeText={setTotalSeats} placeholder="12" keyboardType="number-pad" />
+        <Field label="المقاعد الكلية *" error={errors.totalSeats}>
+          <Input value={totalSeats} onChangeText={t => { setTotalSeats(t); setErrors(e => ({ ...e, totalSeats: '' })); }} placeholder="12" keyboardType="number-pad" error={!!errors.totalSeats} />
         </Field>
         <Field label="الغرف الخاصة">
           <Input value={privateSeats} onChangeText={setPrivateSeats} placeholder="2" keyboardType="number-pad" />
         </Field>
       </View>
       <View style={styles.row}>
-        <Field label="وقت الفتح *">
-          <Input value={openTime} onChangeText={setOpenTime} placeholder="7:00 ص" />
+        <Field label="وقت الفتح *" error={errors.openTime}>
+          <TimePicker
+            value={openTime}
+            onChange={t => { setOpenTime(t); setErrors(e => ({ ...e, openTime: '' })); }}
+            placeholder="اختر"
+            error={!!errors.openTime}
+          />
         </Field>
         <Field label="وقت الإغلاق">
-          <Input value={closeTime} onChangeText={setCloseTime} placeholder="12:00 م" />
+          <TimePicker value={closeTime} onChange={setCloseTime} placeholder="اختر" />
         </Field>
       </View>
       <Field label="أوقات الخميس/الجمعة (إن اختلفت)">
@@ -334,11 +395,16 @@ export default function CafeRegistrationScreen({ navigation }) {
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Text style={styles.backIcon}>‹</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>سجّل كافيهك</Text>
+        <Text style={styles.title}>{isEditing ? 'تعديل بيانات الكافيه' : 'سجّل كافيهك'}</Text>
         <View style={{ width: 36 }} />
       </View>
 
-      <StepIndicator current={step} total={STEPS.length} />
+      <StepIndicator
+        current={step}
+        total={STEPS.length}
+        isEditing={isEditing}
+        onPress={i => { setErrors({}); setStep(i); }}
+      />
       <Text style={styles.stepTitle}>{STEPS[step]}</Text>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
@@ -422,6 +488,9 @@ const styles = StyleSheet.create({
     color: colors.textPrimary, fontSize: 14,
   },
 
+  fieldError: { fontSize: 11, color: colors.full, marginTop: 4 },
+  inputError: { borderColor: colors.full, borderWidth: 1.5 },
+
   row: { flexDirection: 'row', gap: spacing.md },
 
   optionGroup: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
@@ -479,4 +548,27 @@ const styles = StyleSheet.create({
     borderRadius: radius.md, paddingVertical: 14, alignItems: 'center',
   },
   nextText: { fontSize: 15, fontWeight: '700', color: colors.background },
+});
+
+const pickerStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingBottom: 40,
+  },
+  header: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  title:  { color: colors.textPrimary, fontSize: 15, fontWeight: '600' },
+  cancel: { color: colors.textMuted,   fontSize: 15, paddingHorizontal: 8 },
+  option: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingVertical: 14, paddingHorizontal: 20,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  optionSelected: { backgroundColor: colors.primaryGlow },
+  optionText: { color: colors.textSecondary, fontSize: 15 },
+  optionTextSelected: { color: colors.primary, fontWeight: '700' },
 });

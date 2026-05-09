@@ -31,6 +31,7 @@ function calcEndTime(startSlot, durationHours) {
 }
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { sendPushToUser } from '../lib/notifications';
 
 function StatCard({ num, label, accent }) {
   return (
@@ -41,57 +42,6 @@ function StatCard({ num, label, accent }) {
   );
 }
 
-function SeatsControl({ cafe, onUpdate }) {
-  const [freeSeats, setFreeSeats] = useState(cafe.free_seats ?? 0);
-  const [saving, setSaving] = useState(false);
-  const max = cafe.total_seats ?? 0;
-
-  async function save() {
-    setSaving(true);
-    const { error } = await supabase
-      .from('cafes')
-      .update({ free_seats: freeSeats })
-      .eq('id', cafe.id);
-    setSaving(false);
-    if (error) { Alert.alert('خطأ', error.message); return; }
-    onUpdate(freeSeats);
-    Alert.alert('✓', 'تم تحديث المقاعد');
-  }
-
-  return (
-    <View style={styles.seatsCard}>
-      <Text style={styles.seatsTitle}>المقاعد الفارغة الآن</Text>
-      <View style={styles.seatsControl}>
-        <TouchableOpacity
-          style={styles.seatsBtn}
-          onPress={() => setFreeSeats(f => Math.max(0, f - 1))}
-        >
-          <Text style={styles.seatsBtnText}>−</Text>
-        </TouchableOpacity>
-        <View style={styles.seatsValueWrap}>
-          <Text style={styles.seatsValue}>{freeSeats}</Text>
-          <Text style={styles.seatsMax}>من {max}</Text>
-        </View>
-        <TouchableOpacity
-          style={styles.seatsBtn}
-          onPress={() => setFreeSeats(f => Math.min(max, f + 1))}
-        >
-          <Text style={styles.seatsBtnText}>+</Text>
-        </TouchableOpacity>
-      </View>
-      <TouchableOpacity
-        style={[styles.saveBtn, saving && { opacity: 0.7 }]}
-        onPress={save}
-        disabled={saving || freeSeats === cafe.free_seats}
-      >
-        {saving
-          ? <ActivityIndicator color={colors.background} size="small" />
-          : <Text style={styles.saveBtnText}>حفظ التحديث</Text>
-        }
-      </TouchableOpacity>
-    </View>
-  );
-}
 
 export default function CafeDashboardScreen({ navigation }) {
   const { user, signOut } = useAuth();
@@ -99,7 +49,8 @@ export default function CafeDashboardScreen({ navigation }) {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [seatCounts, setSeatCounts] = useState({});
-  const [savingSeats, setSavingSeats] = useState(false);
+  const [savingCol, setSavingCol] = useState(null);
+  const [enabledTypes, setEnabledTypes] = useState(new Set());
 
   const ownerName = user?.user_metadata?.full_name ?? user?.email ?? '';
 
@@ -111,6 +62,7 @@ export default function CafeDashboardScreen({ navigation }) {
       const counts = {};
       SEAT_TYPES.forEach(t => { counts[t.col] = cafeData[t.col] ?? 0; });
       setSeatCounts(counts);
+      setEnabledTypes(new Set(cafeData.seat_types ?? []));
     }
 
     if (cafeData?.id) {
@@ -128,30 +80,68 @@ export default function CafeDashboardScreen({ navigation }) {
   useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
 
   async function updateBooking(id, status) {
+    const booking = bookings.find(b => b.id === id);
     const { error } = await supabase.from('bookings').update({ status }).eq('id', id);
     if (error) { Alert.alert('خطأ', error.message); return; }
     setBookings(prev => prev.map(b => b.id === id ? { ...b, status } : b));
-    // Free the seat when session ends
-    if (status === 'completed' && cafe) {
-      const newFree = Math.min((cafe.free_seats ?? 0) + 1, cafe.total_seats ?? 0);
-      await supabase.from('cafes').update({ free_seats: newFree }).eq('id', cafe.id);
-      setCafe(c => ({ ...c, free_seats: newFree }));
+
+    if (booking?.user_id) {
+      if (status === 'confirmed') {
+        sendPushToUser(
+          booking.user_id,
+          'تم تأكيد حجزك ✓',
+          `حجزك في ${cafe?.name} الساعة ${booking.time_slot} مؤكد`
+        ).catch(() => {});
+      } else if (status === 'cancelled') {
+        sendPushToUser(
+          booking.user_id,
+          'تم رفض الحجز',
+          `للأسف تم رفض حجزك في ${cafe?.name} — جرّب وقتاً آخر`
+        ).catch(() => {});
+      }
     }
-    // Occupy a seat when booking is approved
-    if (status === 'confirmed' && cafe) {
-      const newFree = Math.max((cafe.free_seats ?? 0) - 1, 0);
-      await supabase.from('cafes').update({ free_seats: newFree }).eq('id', cafe.id);
-      setCafe(c => ({ ...c, free_seats: newFree }));
+    // Seat was already decremented when user created the booking (pending)
+    // Restore seat when booking is cancelled (cafe rejects) or session completes
+    if ((status === 'cancelled' || status === 'completed') && cafe && booking) {
+      const seatDef = SEAT_TYPES.find(t => t.label === booking.seat_type);
+      const newFree = Math.min((cafe.free_seats ?? 0) + 1, cafe.total_seats ?? 0);
+      const update = { free_seats: newFree };
+      if (seatDef?.col) update[seatDef.col] = (cafe[seatDef.col] ?? 0) + 1;
+      await supabase.from('cafes').update(update).eq('id', cafe.id);
+      setCafe(c => {
+        const next = { ...c, free_seats: newFree };
+        if (seatDef?.col) next[seatDef.col] = (c[seatDef.col] ?? 0) + 1;
+        return next;
+      });
     }
   }
 
-  async function saveSeatTypes() {
-    setSavingSeats(true);
-    const { error } = await supabase.from('cafes').update(seatCounts).eq('id', cafe.id);
-    setSavingSeats(false);
-    if (error) { Alert.alert('خطأ', error.message); return; }
-    setCafe(c => ({ ...c, ...seatCounts }));
-    Alert.alert('✓', 'تم حفظ تصنيف المقاعد');
+  async function toggleSeatType(typeId) {
+    const newEnabled = new Set(enabledTypes);
+    if (newEnabled.has(typeId)) newEnabled.delete(typeId);
+    else newEnabled.add(typeId);
+    setEnabledTypes(newEnabled);
+    const arr = Array.from(newEnabled);
+    const newFree = SEAT_TYPES.filter(t => newEnabled.has(t.id)).reduce((sum, t) => sum + (seatCounts[t.col] ?? 0), 0);
+    const { error } = await supabase.from('cafes').update({ seat_types: arr, free_seats: newFree }).eq('id', cafe.id);
+    if (error) { setEnabledTypes(enabledTypes); Alert.alert('خطأ', error.message); return; }
+    setCafe(c => ({ ...c, seat_types: arr, free_seats: newFree }));
+  }
+
+  async function adjustSeatType(col, delta) {
+    const newVal = Math.max(0, (seatCounts[col] ?? 0) + delta);
+    const newCounts = { ...seatCounts, [col]: newVal };
+    const newFree = SEAT_TYPES.filter(t => enabledTypes.has(t.id)).reduce((sum, t) => sum + (newCounts[t.col] ?? 0), 0);
+    setSeatCounts(newCounts);
+    setCafe(c => ({ ...c, [col]: newVal, free_seats: newFree }));
+    setSavingCol(col);
+    const { error } = await supabase.from('cafes').update({ [col]: newVal, free_seats: newFree }).eq('id', cafe.id);
+    setSavingCol(null);
+    if (error) {
+      setSeatCounts(seatCounts);
+      setCafe(c => ({ ...c, [col]: seatCounts[col] ?? 0 }));
+      Alert.alert('خطأ', error.message);
+    }
   }
 
   function handleSignOut() {
@@ -175,7 +165,7 @@ export default function CafeDashboardScreen({ navigation }) {
           <Text style={styles.subtitle}>لوحة تحكم الكافيه</Text>
         </View>
         <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
-          <Text style={styles.signOutIcon}>⎋</Text>
+          <Text style={styles.signOutText}>خروج</Text>
         </TouchableOpacity>
       </View>
 
@@ -226,20 +216,72 @@ export default function CafeDashboardScreen({ navigation }) {
             </View>
           )}
 
-          {/* Stats */}
-          <View style={styles.statsRow}>
-            <StatCard num={cafe.free_seats ?? 0} label="مقعد فارغ" accent />
-            <StatCard num={cafe.total_seats ?? 0} label="مقاعد كلية" />
-            <StatCard num={cafe.private_seats ?? 0} label="غرف خاصة" />
-          </View>
+          {/* Stats + Seat type bar */}
+          <View style={styles.seatBlock}>
+            {/* Overview row */}
+            <View style={styles.statsRow}>
+              <StatCard num={cafe.free_seats ?? 0} label="متاح الآن" accent />
+              <StatCard num={cafe.total_seats ?? 0} label="إجمالي المقاعد" />
+            </View>
 
-          {/* Seat update control */}
-          {cafe.status === 'active' && (
-            <SeatsControl
-              cafe={cafe}
-              onUpdate={n => setCafe(c => ({ ...c, free_seats: n }))}
-            />
-          )}
+            {/* Horizontal seat type controls */}
+            {cafe.status === 'active' && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.seatBarContent}
+              >
+                {SEAT_TYPES.map(t => {
+                  const count = seatCounts[t.col] ?? 0;
+                  const isSaving = savingCol === t.col;
+                  const isEnabled = enabledTypes.has(t.id);
+                  return (
+                    <View key={t.id} style={[styles.seatChip, !isEnabled && styles.seatChipOff]}>
+                      <Text style={styles.seatChipIcon}>{t.icon}</Text>
+                      <Text style={styles.seatChipLabel}>{t.label}</Text>
+                      {isEnabled ? (
+                        <>
+                          <Text style={[styles.seatChipCount, count > 0 && { color: colors.primary }]}>
+                            {count}
+                          </Text>
+                          <View style={styles.seatChipCtrl}>
+                            <TouchableOpacity
+                              onPress={() => adjustSeatType(t.col, -1)}
+                              disabled={isSaving || count === 0}
+                              style={[styles.seatChipBtn, (isSaving || count === 0) && { opacity: 0.3 }]}
+                            >
+                              <Text style={styles.seatChipBtnText}>−</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => adjustSeatType(t.col, +1)}
+                              disabled={isSaving}
+                              style={[styles.seatChipBtn, isSaving && { opacity: 0.3 }]}
+                            >
+                              <Text style={styles.seatChipBtnText}>+</Text>
+                            </TouchableOpacity>
+                          </View>
+                          <TouchableOpacity onPress={() => toggleSeatType(t.id)} style={styles.seatChipXBtn}>
+                            <Text style={styles.seatChipXText}>✕</Text>
+                          </TouchableOpacity>
+                        </>
+                      ) : (
+                        <TouchableOpacity onPress={() => toggleSeatType(t.id)} style={styles.seatChipActivateBtn}>
+                          <Text style={styles.seatChipActivateText}>تفعيل</Text>
+                        </TouchableOpacity>
+                      )}
+                      {isSaving && (
+                        <ActivityIndicator
+                          size="small"
+                          color={colors.primary}
+                          style={{ position: 'absolute', top: 6, left: 6 }}
+                        />
+                      )}
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </View>
 
           {/* Quick info */}
           <View style={styles.infoCard}>
@@ -258,42 +300,6 @@ export default function CafeDashboardScreen({ navigation }) {
             ))}
           </View>
 
-          {/* Seat type management */}
-          {cafe.status === 'active' && (
-            <View style={styles.seatTypesCard}>
-              <Text style={styles.seatsTitle}>تصنيف المقاعد</Text>
-              {SEAT_TYPES.map(t => (
-                <View key={t.id} style={styles.seatTypeRow}>
-                  <Text style={styles.seatTypeLabel}>{t.icon} {t.label}</Text>
-                  <View style={styles.seatTypeControl}>
-                    <TouchableOpacity
-                      style={styles.seatTypeBtn}
-                      onPress={() => setSeatCounts(p => ({ ...p, [t.col]: Math.max(0, (p[t.col] ?? 0) - 1) }))}
-                    >
-                      <Text style={styles.seatTypeBtnText}>−</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.seatTypeCount}>{seatCounts[t.col] ?? 0}</Text>
-                    <TouchableOpacity
-                      style={styles.seatTypeBtn}
-                      onPress={() => setSeatCounts(p => ({ ...p, [t.col]: (p[t.col] ?? 0) + 1 }))}
-                    >
-                      <Text style={styles.seatTypeBtnText}>+</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
-              <TouchableOpacity
-                style={[styles.saveBtn, savingSeats && { opacity: 0.7 }]}
-                onPress={saveSeatTypes}
-                disabled={savingSeats}
-              >
-                {savingSeats
-                  ? <ActivityIndicator color={colors.background} size="small" />
-                  : <Text style={styles.saveBtnText}>حفظ التصنيف</Text>
-                }
-              </TouchableOpacity>
-            </View>
-          )}
 
           {/* Incoming bookings */}
           {cafe.status === 'active' && (
@@ -374,7 +380,7 @@ export default function CafeDashboardScreen({ navigation }) {
           {/* Edit cafe */}
           <TouchableOpacity
             style={styles.editBtn}
-            onPress={() => navigation.navigate('CafeRegistration')}
+            onPress={() => navigation.navigate('CafeRegistration', { cafe })}
           >
             <Text style={styles.editBtnText}>تعديل بيانات الكافيه</Text>
           </TouchableOpacity>
@@ -395,11 +401,10 @@ const styles = StyleSheet.create({
   greeting: { ...typography.h1, fontSize: 20 },
   subtitle: { ...typography.caption, marginTop: 2 },
   signOutBtn: {
-    width: 40, height: 40, borderRadius: radius.full,
+    paddingVertical: 8, paddingHorizontal: 14, borderRadius: radius.md,
     backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
-    alignItems: 'center', justifyContent: 'center',
   },
-  signOutIcon: { fontSize: 18, color: colors.textSecondary },
+  signOutText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
 
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xl },
   emptyIcon: { fontSize: 56, marginBottom: spacing.lg },
@@ -431,35 +436,42 @@ const styles = StyleSheet.create({
   },
   pendingNoteText: { fontSize: 13, color: colors.low, textAlign: 'center' },
 
+  seatBlock: {
+    backgroundColor: colors.surface, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
+  },
   statsRow: {
-    flexDirection: 'row', backgroundColor: colors.surface,
-    borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
+    flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   statCard: { flex: 1, alignItems: 'center', paddingVertical: spacing.lg },
   statNum: { fontSize: 26, fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.5 },
   statLabel: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
 
-  seatsCard: {
-    backgroundColor: colors.surface, borderRadius: radius.lg,
-    borderWidth: 1, borderColor: colors.border, padding: spacing.lg,
-    alignItems: 'center', gap: spacing.lg,
+  seatBarContent: { paddingHorizontal: spacing.md, paddingVertical: spacing.md, gap: 8 },
+  seatChip: {
+    backgroundColor: colors.surfaceElevated, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: 12, paddingVertical: 10,
+    alignItems: 'center', minWidth: 78, gap: 4, position: 'relative',
   },
-  seatsTitle: { ...typography.h3 },
-  seatsControl: { flexDirection: 'row', alignItems: 'center', gap: spacing.xl },
-  seatsBtn: {
-    width: 48, height: 48, borderRadius: radius.full,
-    backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.border,
+  seatChipIcon:  { fontSize: 18, color: colors.textSecondary },
+  seatChipLabel: { fontSize: 10, color: colors.textMuted },
+  seatChipCount: { fontSize: 22, fontWeight: '700', color: colors.textPrimary },
+  seatChipCtrl:  { flexDirection: 'row', gap: 6 },
+  seatChipBtn: {
+    width: 28, height: 28, borderRadius: radius.full,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center',
   },
-  seatsBtnText: { fontSize: 24, color: colors.primary, fontWeight: '300' },
-  seatsValueWrap: { alignItems: 'center' },
-  seatsValue: { fontSize: 40, fontWeight: '700', color: colors.primary, letterSpacing: -1 },
-  seatsMax: { fontSize: 12, color: colors.textMuted },
-  saveBtn: {
-    backgroundColor: colors.primary, borderRadius: radius.md,
-    paddingVertical: 12, paddingHorizontal: spacing.xxl,
+  seatChipBtnText: { fontSize: 18, color: colors.primary, fontWeight: '300', lineHeight: 22 },
+  seatChipOff: { opacity: 0.45 },
+  seatChipXBtn: { position: 'absolute', top: 4, right: 4, padding: 2 },
+  seatChipXText: { fontSize: 9, color: colors.textMuted },
+  seatChipActivateBtn: {
+    backgroundColor: colors.primaryGlow, borderWidth: 1, borderColor: colors.borderStrong,
+    borderRadius: radius.sm, paddingVertical: 5, paddingHorizontal: 10, marginTop: 4,
   },
-  saveBtnText: { fontSize: 14, fontWeight: '700', color: colors.background },
+  seatChipActivateText: { fontSize: 11, color: colors.primary, fontWeight: '700' },
 
   infoCard: {
     backgroundColor: colors.surface, borderRadius: radius.lg,
@@ -521,23 +533,4 @@ const styles = StyleSheet.create({
   },
   leaveBtnText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
 
-  seatTypesCard: {
-    backgroundColor: colors.surface, borderRadius: radius.lg,
-    borderWidth: 1, borderColor: colors.border,
-    padding: spacing.lg, gap: spacing.sm,
-  },
-  seatTypeRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 6,
-    borderBottomWidth: 1, borderBottomColor: colors.border,
-  },
-  seatTypeLabel: { fontSize: 14, color: colors.textPrimary, fontWeight: '500' },
-  seatTypeControl: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  seatTypeBtn: {
-    width: 32, height: 32, borderRadius: radius.full,
-    backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  seatTypeBtnText: { fontSize: 18, color: colors.primary, fontWeight: '300' },
-  seatTypeCount: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, minWidth: 24, textAlign: 'center' },
 });
